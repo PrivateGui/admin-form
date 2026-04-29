@@ -1,0 +1,8 @@
+{
+  "version": 2,
+  "name": "Admin-Forum",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/data/users" }
+  ],
+  "trailingSlash": false
+}
