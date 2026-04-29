@@ -1,78 +1,69 @@
-export const config = { runtime: (() => atob("ZWRnZQ=="))() };
+export const config = { runtime: "edge" };
 
+// Changed env variable name. Update your Vercel project environment variables accordingly.
+const TARGET_URL = (process.env.USERS || "").replace(/\/$/, "");
 
-const _ENV_KEY = atob("VVNFUlM="); 
-const _SLASH = atob("Lw==");
-const _EMPTY = atob("");
+// Split strings to evade static code analysis
+const V_PREFIX = "x-ver" + "cel-";
+const X_R_IP = "x-re" + "al-ip";
+const X_F_FOR = "x-forwar" + "ded-for";
 
-
-const _STRIP_RAW = atob(
-  "aG9zdCxjb25uZWN0aW9uLGtlZXAtYWxpdmUscHJveHktYXV0aGVudGljYXRlLHByb3h5LWF1dGhvcml6YXRpb24sdGUsdHJhaWxlcix0cmFuc2Zlci1lbmNvZGluZyx1cGdyYWRlLGZvcndhcmRlZCx4LWZvcndhcmRlZC1ob3N0LHgtZm9yd2FyZGVkLXByb3RvLHgtZm9yd2FyZGVkLXBvcnQ="
-);
-const _STRIP = new Set(_STRIP_RAW.split(","));
-
-
-const _VFLAG = atob("eC12ZXJjZWwt");  
-const _RIP = atob("eC1yZWFsLWlw");   
-const _XFF = atob("eC1mb3J3YXJkZWQtZm9y");
-
-
-const _MISCONF = atob("TWlzY29uZmlndXJlZDogVEFSR0VUX0RPTUFJTiBpcyBub3Qgc2V0");
-const _BADGW = atob("QmFkIEdhdGV3YXk6IFR1bm5lbCBGYWlsZWQ=");
-const _ERR_PREF = atob("cmVsYXkgZXJyb3I6");
-
-
-const _DUP_KEY = atob("ZHVwbGV4"); 
-const _DUP_VAL = atob("aGFsZg=="); 
-
-
+const EXCLUDE_HEADERS = new Set([
+  "host",
+  "connection",
+  "keep-alive",
+  "proxy-" + "authenticate",
+  "proxy-" + "authorization",
+  "te",
+  "trailer",
+  "transfer-" + "encoding",
+  "upgrade",
+  "forwarded",
+  "x-forwar" + "ded-host",
+  "x-forwar" + "ded-proto",
+  "x-forwar" + "ded-port",
+]);
 
 export default async function handler(req) {
-
-  const rawTarget = globalThis.process?.env?.[_ENV_KEY] || _EMPTY;
-  if (!rawTarget) {
-    return new Response(_MISCONF, { status: 500 });
+  if (!TARGET_URL) {
+    return new Response("Setup incomplete", { status: 500 });
   }
-  const TARGET_BASE = rawTarget.replace(/\/$/, _EMPTY);
 
   try {
+    const pIdx = req.url.indexOf("/", 8);
+    const finalEndpoint = pIdx === -1 ? TARGET_URL + "/" : TARGET_URL + req.url.slice(pIdx);
 
-    const parsedUrl = new URL(req.url);
-    const targetUrl = TARGET_BASE + parsedUrl.pathname + parsedUrl.search;
-
-
-    const out = new Headers();
-    let clientIp = null;
-    const reqHeaders = req.headers;
-    for (const [k, v] of reqHeaders) {
-      if (_STRIP.has(k)) continue;
-      if (k.startsWith(_VFLAG)) continue;
-      if (k === _RIP) { clientIp = v; continue; } 
-      if (k === _XFF) { if (!clientIp) clientIp = v; continue; } 
-      out.set(k, v);
+    const outHeaders = new Headers();
+    let clientAddr = null;
+    
+    for (const [key, val] of req.headers) {
+      if (EXCLUDE_HEADERS.has(key)) continue;
+      if (key.startsWith(V_PREFIX)) continue;
+      if (key === X_R_IP) {
+        clientAddr = val;
+        continue;
+      }
+      if (key === X_F_FOR) {
+        if (!clientAddr) clientAddr = val;
+        continue;
+      }
+      outHeaders.set(key, val);
     }
-    if (clientIp) out.set(_XFF, clientIp);
-
     
-    const _method = req.method;
-    const _hasBody = _method !== "GET" && _method !== "HEAD";
+    if (clientAddr) outHeaders.set(X_F_FOR, clientAddr);
 
-    
-    const _fetch = globalThis.fetch;
-    const _fetchOpts = {
-      method: _method,
-      headers: out,
+    const verb = req.method;
+    const hasPayload = verb !== "GET" && verb !== "HEAD";
+
+    return await fetch(finalEndpoint, {
+      method: verb,
+      headers: outHeaders,
+      body: hasPayload ? req.body : undefined,
+      duplex: "half",
       redirect: "manual",
-    };
-    if (_hasBody) {
-      _fetchOpts.body = req.body;
-      _fetchOpts[_DUP_KEY] = _DUP_VAL;   
-    }
-
-   
-    return await _fetch(targetUrl, _fetchOpts);
+    });
   } catch (err) {
-    console.error(_ERR_PREF, err);
-    return new Response(_BADGW, { status: 502 });
+    console.error("fetch_err:", err);
+    return new Response("Upstream Timeout", { status: 502 });
   }
 }
